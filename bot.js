@@ -1,9 +1,13 @@
+const U6_USE_UNICODE_EMOJI = true;
+
+
+
 const Discord = require('discord.js');
 const fs = require('fs');
 const CreateBoardImage = require('./Bot_modules/imagecreator')
 const auth = require('./auth.json');
 const emoji_help = require('./Bot_modules/emoji_help.json');
-const ConvertToEmoji = require('./Bot_modules/emoji_table.js');
+const ConvertToEmoji = U6_USE_UNICODE_EMOJI? require('./Bot_modules/emoji_table_universal.js') : require('./Bot_modules/emoji_table.js');
 const ConvertToLetter = require('./Bot_modules/letter_table')
 
 const prefix = '+';
@@ -148,8 +152,11 @@ bot.on('message', async msg =>
 					let gem1 = current_game.board[args[0]-1][args[1]-1]
 					current_game.board[args[0]-1][args[1]-1] = current_game.board[ycoord-1][xcoord-1]
 					current_game.board[ycoord-1][xcoord-1] = gem1
-
+					
+					let old_cascades=current_game.stats.cascades;
+					current_game.stats.cascades=0;
 					let matches_found = execute_matches(current_game, current_game.board)
+					current_game.stats.cascades=old_cascades;
 					if (matches_found === 0){ //swap back
 						gem1 = current_game.board[args[0]-1][args[1]-1]
 						current_game.board[args[0]-1][args[1]-1] = current_game.board[ycoord-1][xcoord-1]
@@ -173,6 +180,12 @@ bot.on('message', async msg =>
 				}
 				else msg.channel.send(canswap)
 			} else msg.channel.send("Command format is ```+swap [row] [column] [left/right/up/down]```")
+			break;
+		case "log_game":
+			console.log(current_game);
+			break;
+		case "debug":
+			eval(msg.content.slice(prefix.length+6));
 			break;
 		default: msg.channel.send(`Can't understand, ${msg.author}`); break;
 	}
@@ -230,6 +243,7 @@ function board_has_matches(board) { //check if there are matches already in the 
 
 function execute_matches(current_game, board){ //find matches and destroy the gems that got matched
 	let matches_found = 0;
+	let score=0;
 	let matched_gems = []
 	for(let i = 0; i < 8; i++){
 		let n_hor = 1;
@@ -244,6 +258,7 @@ function execute_matches(current_game, board){ //find matches and destroy the ge
 					matched_gems.push(board[i][k])
 				}
 				matches_found++
+				score+= 10 * (n_hor-2) * (current_game.stats.cascades+1) * matches_found
 				n_hor = 1
 			}
 			else if (!is_same_color) n_hor = 1
@@ -255,12 +270,15 @@ function execute_matches(current_game, board){ //find matches and destroy the ge
 					matched_gems.push(board[k][i])
 				}
 				matches_found++
+				score+= 10 * (n_ver-2) * (current_game.stats.cascades+1) * matches_found
 				n_ver = 1
 			}
 			else if (!is_same_color) n_ver = 1			
 		}
 	}
 	for(i = 0; i < matched_gems.length; i++) matched_gems[i].skin = -1
+	current_game.stats.score+=score;
+	current_game.stats.plus_score_disp+=score;
 	return matches_found;
 }
 function message_create_board_array(message){ //create a board array depending on what the user has written
@@ -322,11 +340,16 @@ function messagify_board(current_game, initial_text){ //Take all gems and write 
 	let state = "Ready!"
 	if (current_game.state === "moving") state = "Standby..."
 	else if (current_game.state === "replay") state = "Replaying..."
+	
+	let score_text=current_game.stats.score.toString()
+	if(current_game.stats.plus_score_disp>0){
+		score_text+="\n(+"+current_game.stats.plus_score_disp.toString()+")"
+	}
 	//initial_text+="\n"+state
 	const emb = new Discord.MessageEmbed()
 	.setDescription(initial_text)
 	.addFields(
-		{ name: 'Score', value: current_game.stats.score, inline: true },
+		{ name: 'Score', value: score_text, inline: true },
 		{ name: 'Cascades', value: current_game.stats.cascades, inline: true },
 		{ name: 'Last move', value: current_game.stats.last_move.row + " , " +current_game.stats.last_move.col, inline: true },
 		{ name: 'State', value: state}
@@ -397,6 +420,7 @@ function check_cascade_matches(current_game){ //check if there are cascades afte
 		{
 			current_game.state = "stable"
 			current_game.current_message.edit(messagify_board(current_game, "\n"))
+			current_game.stats.plus_score_disp=0;
 		}
 	}
 }
